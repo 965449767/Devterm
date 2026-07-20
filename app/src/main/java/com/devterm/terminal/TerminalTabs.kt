@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+@Deprecated("Use TerminalTabsNew instead", ReplaceWith("TerminalTabsNew"))
 @Composable
 fun TerminalTabs(
     tabManager: TabManager,

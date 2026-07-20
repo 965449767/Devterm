@@ -17,11 +17,15 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.icons.Icons
+import androidx.compose.material3.icons.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,9 +47,11 @@ fun SettingsScreen(
     currentTheme: TerminalTheme,
     currentFontSize: Int,
     currentCursorStyle: RenderFrame.CursorStyle,
+    currentCursorBlink: Boolean,
     onThemeChanged: (TerminalTheme) -> Unit,
     onFontSizeChanged: (Int) -> Unit,
     onCursorStyleChanged: (RenderFrame.CursorStyle) -> Unit,
+    onCursorBlinkChanged: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -53,11 +59,9 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("设置") },
                 navigationIcon = {
-//                    Icon(
-//                        painter = painterResource(id = R.drawable.ic_back),
-//                        contentDescription = "返回",
-//                        modifier = Modifier.clickable { onBack() }
-//                    )
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
                 }
             )
         }
@@ -88,6 +92,13 @@ fun SettingsScreen(
                 CursorStyleCard(
                     currentStyle = currentCursorStyle,
                     onStyleChanged = onCursorStyleChanged
+                )
+            }
+
+            item {
+                CursorBlinkCard(
+                    currentBlink = currentCursorBlink,
+                    onBlinkChanged = onCursorBlinkChanged
                 )
             }
         }
@@ -257,6 +268,35 @@ private fun CursorStyleCard(
                     onStyleChanged(style)
                     expanded = false
                 }
+            )
+        }
+    }
+}
+
+@Composable
+private fun CursorBlinkCard(
+    currentBlink: Boolean,
+    onBlinkChanged: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "光标闪烁",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Switch(
+                checked = currentBlink,
+                onCheckedChange = onBlinkChanged
             )
         }
     }

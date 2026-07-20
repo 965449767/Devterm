@@ -16,6 +16,9 @@ class ScreenBuffer(
 
     var cursor = CursorState()
     private var savedCursor = CursorState()
+    private var savedFg: Int = 0
+    private var savedBg: Int = 0
+    private var savedFlags: Byte = 0
 
     var defaultFg: Int = 0xFFE0E0E0.toInt()
     var defaultBg: Int = 0xFF1A1A2E.toInt()
@@ -483,10 +486,18 @@ class ScreenBuffer(
 
     private fun saveCursor() {
         savedCursor = cursor
+        // 同时保存 SGR 状态（前景色、背景色、样式标记）
+        savedFg = currentFg
+        savedBg = currentBg
+        savedFlags = currentFlags
     }
 
     private fun restoreCursor() {
         cursor = savedCursor
+        // 恢复 SGR 状态
+        currentFg = savedFg
+        currentBg = savedBg
+        currentFlags = savedFlags
     }
 
     private fun setSgr(params: List<Int>) {
@@ -617,14 +628,22 @@ class ScreenBuffer(
         bg = IntArray(total) { defaultBg }
         flags = ByteArray(total) { 0 }
         cursor = CursorState()
+        savedCursor = CursorState()
         currentFg = defaultFg
         currentBg = defaultBg
         currentFlags = 0
+        savedFg = defaultFg
+        savedBg = defaultBg
+        savedFlags = 0
         scrollRegionTop = 0
         scrollRegionBottom = rows - 1
         originMode = false
         autoWrap = true
         wrapPending = false
+        // 重置制表位为默认每 8 列一个
+        for (col in 0 until cols) {
+            tabStops[col] = col % tabWidth == 0
+        }
         dirty.markAll()
     }
 }

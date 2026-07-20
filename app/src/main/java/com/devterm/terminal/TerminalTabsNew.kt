@@ -17,7 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.icons.Icons
+import androidx.compose.material3.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
@@ -27,10 +31,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devterm.terminal.core.renderer.RenderFrame
 
 @Composable
 fun TerminalTabsNew(
     tabManager: TabManagerNew,
+    defaultBg: Int,
+    cursorColor: Int,
+    fontSize: Int,
+    cursorBlinkEnabled: Boolean,
+    cursorStyle: RenderFrame.CursorStyle,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val tabs = tabManager.tabs
@@ -48,7 +59,8 @@ fun TerminalTabsNew(
             activeIndex = activeIndex,
             onTabClick = { tabManager.switchTab(it) },
             onTabClose = { tabManager.closeTab(it) },
-            onNewTab = { tabManager.createTab() }
+            onNewTab = { tabManager.createTab() },
+            onOpenSettings = onOpenSettings
         )
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -58,6 +70,10 @@ fun TerminalTabsNew(
                         devTermCore = activeTab.core,
                         keyboardHandler = activeTab.keyboardHandler,
                         modifier = Modifier.fillMaxSize(),
+                        defaultBg = defaultBg,
+                        cursorColor = cursorColor,
+                        fontSize = fontSize,
+                        cursorBlinkEnabled = cursorBlinkEnabled,
                         onColsRows = { cols, rows -> activeTab.core.resize(cols, rows) }
                     )
                 }
@@ -72,7 +88,8 @@ private fun TabBarNew(
     activeIndex: Int,
     onTabClick: (Int) -> Unit,
     onTabClose: (Int) -> Unit,
-    onNewTab: () -> Unit
+    onNewTab: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val activeBg = Color(0xFF45475A)
     val inactiveBg = Color(0xFF2D2D3F)
@@ -133,6 +150,16 @@ private fun TabBarNew(
                 text = "+",
                 color = accentColor,
                 fontSize = 16.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        IconButton(onClick = onOpenSettings) {
+            Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = "设置",
+                tint = accentColor
             )
         }
     }

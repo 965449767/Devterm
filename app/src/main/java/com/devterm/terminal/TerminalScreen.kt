@@ -63,6 +63,7 @@ data class CharMetrics(
 )
 
 @OptIn(ExperimentalComposeUiApi::class)
+@Deprecated("Use TerminalScreenNew instead", ReplaceWith("TerminalScreenNew"))
 @Composable
 fun TerminalScreen(
     terminalEmulator: TerminalEmulator,

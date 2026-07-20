@@ -13,6 +13,7 @@ data class TabData(
     val session: TerminalSession
 )
 
+@Deprecated("Use TabManagerNew instead", ReplaceWith("TabManagerNew"))
 class TabManager(
     private val filesDirPath: String,
     private val nodeRuntime: NodeJsRuntime?

@@ -5,6 +5,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.devterm.terminal.core.backend.Backend
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.io.File
 
 data class TabDataNew(
@@ -36,6 +41,9 @@ class TabManagerNew(
     private var _activeIndex by mutableIntStateOf(0)
     private var _nextId by mutableIntStateOf(0)
 
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private val titleJobs = mutableMapOf<Int, Job>()
+
     /** Backend 工厂：自动选择 PTY 或 Process */
     private val backendFactory = BackendFactory(filesDirPath, nodeRuntime)
 
@@ -62,6 +70,18 @@ class TabManagerNew(
 
         val tab = TabDataNew(id, "Terminal ${_tabs.size + 1}", core, keyboardHandler, backend)
         _tabs.add(tab)
+
+        // 监听 OSC 标题变化并同步到 Tab
+        val titleJob = scope.launch {
+            core.title.collectLatest { title ->
+                if (title.isNotBlank()) {
+                    tab.title = title
+                    syncTabs()
+                }
+            }
+        }
+        titleJobs[id] = titleJob
+
         syncTabs()
         _activeIndex = _tabs.size - 1
         return tab
@@ -104,6 +124,7 @@ class TabManagerNew(
         val idx = _tabs.indexOfFirst { it.id == id }
         if (idx < 0) return
         _tabs[idx].core.stop()
+        titleJobs.remove(id)?.cancel()
         _tabs.removeAt(idx)
         syncTabs()
         if (_tabs.isEmpty()) {
@@ -115,6 +136,8 @@ class TabManagerNew(
 
     fun destroyAll() {
         _tabs.forEach { it.core.stop() }
+        titleJobs.values.forEach { it.cancel() }
+        titleJobs.clear()
         _tabs.clear()
         syncTabs()
     }

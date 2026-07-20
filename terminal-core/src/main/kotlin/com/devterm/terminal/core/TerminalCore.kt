@@ -74,6 +74,18 @@ class TerminalCore(
                 is com.devterm.terminal.core.parser.ScreenCommand.SetIconName -> {
                     _title.value = cmd.name
                 }
+                is com.devterm.terminal.core.parser.ScreenCommand.RequestCursorPosition -> {
+                    // 回传光标位置：CSI row;col R（1-indexed）
+                    val row = screen.cursor.row + 1
+                    val col = screen.cursor.col + 1
+                    writeInput("\u001b[$row;${col}R")
+                }
+                is com.devterm.terminal.core.parser.ScreenCommand.DeviceStatusReport -> {
+                    if (cmd.n == 5) {
+                        // 回传设备就绪：CSI 0 n
+                        writeInput("\u001b[0n")
+                    }
+                }
                 else -> screen.execute(cmd)
             }
         }
