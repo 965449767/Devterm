@@ -184,8 +184,10 @@ class VtParser {
             }
             finalChar == 'm' -> commandQueue.add(ScreenCommand.SetSgr(p))
             finalChar == 'r' -> {
+                // DECSTBM：设置滚动区域。参数是 1-indexed，转换为 0-indexed。
+                // top 默认 1（→0），bottom 默认为屏幕高度（由 ScreenBuffer 处理 0 的情况）
                 val top = p.getOrElse(0) { 1 } - 1
-                val bottom = p.getOrElse(1) { 0 }
+                val bottom = p.getOrElse(1) { 0 } - 1
                 commandQueue.add(ScreenCommand.SetScrollRegion(top, bottom))
             }
             finalChar == 'h' -> {

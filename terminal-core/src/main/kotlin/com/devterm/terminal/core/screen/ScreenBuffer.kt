@@ -578,7 +578,8 @@ class ScreenBuffer(
 
     private fun setScrollRegion(top: Int, bottom: Int) {
         val t = top.coerceIn(0, rows - 1)
-        val b = bottom.coerceIn(t, rows - 1)
+        // bottom <= 0 表示默认到屏幕最后一行
+        val b = if (bottom <= 0) rows - 1 else bottom.coerceIn(t, rows - 1)
         scrollRegionTop = t
         scrollRegionBottom = b
         cursor = cursor.withRow(0).withCol(0)

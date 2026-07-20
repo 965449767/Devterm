@@ -264,4 +264,170 @@ class VtParserTest {
         assertTrue(cmds.any { it is ScreenCommand.CarriageReturn })
         assertTrue(cmds.any { it is ScreenCommand.CursorUp && it.n == 1 })
     }
+
+    @Test
+    fun testCsiCursorPositionH() {
+        // CSI 10;20 H = 移动光标到 (row=9, col=19)
+        val cmds = parse("\u001b[10;20H")
+        assertTrue(cmds.any { it is ScreenCommand.MoveCursor && it.row == 9 && it.col == 19 })
+    }
+
+    @Test
+    fun testCsiCursorPositionDefault() {
+        // CSI H 无参数 = 移动到 (0,0)
+        val cmds = parse("\u001b[H")
+        assertTrue(cmds.any { it is ScreenCommand.MoveCursor && it.row == 0 && it.col == 0 })
+    }
+
+    @Test
+    fun testCsiCursorForward() {
+        val cmds = parse("\u001b[5C")
+        assertTrue(cmds.any { it is ScreenCommand.CursorForward && it.n == 5 })
+    }
+
+    @Test
+    fun testCsiCursorBack() {
+        val cmds = parse("\u001b[3D")
+        assertTrue(cmds.any { it is ScreenCommand.CursorBack && it.n == 3 })
+    }
+
+    @Test
+    fun testCsiSgrMultiParam() {
+        // CSI 1;31m = bold + red foreground
+        val cmds = parse("\u001b[1;31m")
+        val sgr = cmds.filterIsInstance<ScreenCommand.SetSgr>().firstOrNull()
+        assertNotNull(sgr)
+        assertEquals(listOf(1, 31), sgr!!.params)
+    }
+
+    @Test
+    fun testCsiSgrReset() {
+        val cmds = parse("\u001b[0m")
+        val sgr = cmds.filterIsInstance<ScreenCommand.SetSgr>().firstOrNull()
+        assertNotNull(sgr)
+        assertEquals(listOf(0), sgr!!.params)
+    }
+
+    @Test
+    fun testCsiScrollRegion() {
+        // CSI 1;24r = 设置滚动区域为行 0..23
+        val cmds = parse("\u001b[1;24r")
+        assertTrue(cmds.any { it is ScreenCommand.SetScrollRegion && it.top == 0 && it.bottom == 23 })
+    }
+
+    @Test
+    fun testCsiInsertLines() {
+        val cmds = parse("\u001b[3L")
+        assertTrue(cmds.any { it is ScreenCommand.InsertLines && it.n == 3 })
+    }
+
+    @Test
+    fun testCsiDeleteLines() {
+        val cmds = parse("\u001b[2M")
+        assertTrue(cmds.any { it is ScreenCommand.DeleteLines && it.n == 2 })
+    }
+
+    @Test
+    fun testCsiInsertChars() {
+        val cmds = parse("\u001b[3@")
+        assertTrue(cmds.any { it is ScreenCommand.InsertChars && it.n == 3 })
+    }
+
+    @Test
+    fun testCsiDeleteChars() {
+        val cmds = parse("\u001b[2P")
+        assertTrue(cmds.any { it is ScreenCommand.DeleteChars && it.n == 2 })
+    }
+
+    @Test
+    fun testCsiSaveRestoreCursor() {
+        val cmds = parse("\u001b[s\u001b[u")
+        assertTrue(cmds.any { it is ScreenCommand.SaveCursor })
+        assertTrue(cmds.any { it is ScreenCommand.RestoreCursor })
+    }
+
+    @Test
+    fun testCsiDeviceStatusReport() {
+        val cmds = parse("\u001b[5n")
+        assertTrue(cmds.any { it is ScreenCommand.DeviceStatusReport && it.n == 5 })
+    }
+
+    @Test
+    fun testCsiRequestCursorPosition() {
+        val cmds = parse("\u001b[6n")
+        assertTrue(cmds.any { it is ScreenCommand.RequestCursorPosition })
+    }
+
+    @Test
+    fun testCsiSetCol() {
+        // CSI 20 G = 设置光标列到 19
+        val cmds = parse("\u001b[20G")
+        assertTrue(cmds.any { it is ScreenCommand.SetCursorCol && it.col == 19 })
+    }
+
+    @Test
+    fun testEscDecscDecrc() {
+        // ESC 7 = DECSC (保存光标), ESC 8 = DECRC (恢复光标)
+        val cmds = parse("\u001b7\u001b8")
+        assertTrue(cmds.any { it is ScreenCommand.SaveCursor })
+        assertTrue(cmds.any { it is ScreenCommand.RestoreCursor })
+    }
+
+    @Test
+    fun testEscIndexAndReverseIndex() {
+        // ESC D = IND (光标下移), ESC M = RI (光标上移)
+        val cmds = parse("\u001bD\u001bM")
+        assertTrue(cmds.any { it is ScreenCommand.LineFeed })
+        assertTrue(cmds.any { it is ScreenCommand.ReverseLineFeed })
+    }
+
+    @Test
+    fun testEscNel() {
+        // ESC E = NEL (下一行行首)
+        val cmds = parse("\u001bE")
+        assertTrue(cmds.any { it is ScreenCommand.CarriageReturn })
+        assertTrue(cmds.any { it is ScreenCommand.LineFeed })
+    }
+
+    @Test
+    fun testEscRisReset() {
+        // ESC c = RIS (重置)
+        val cmds = parse("\u001bc")
+        assertTrue(cmds.any { it is ScreenCommand.Reset })
+    }
+
+    @Test
+    fun testComplexSequence() {
+        // 组合序列：SGR + 文本 + 清屏 + 移动光标
+        val cmds = parse("\u001b[31mHello\u001b[0m\u001b[2J\u001b[H")
+        assertTrue(cmds.any { it is ScreenCommand.SetSgr })
+        assertTrue(cmds.any { it is ScreenCommand.WriteGlyph })
+        assertTrue(cmds.any { it is ScreenCommand.EraseDisplay && it.mode == 2 })
+        assertTrue(cmds.any { it is ScreenCommand.MoveCursor })
+    }
+
+    @Test
+    fun testCsiScrollUp() {
+        val cmds = parse("\u001b[S")
+        assertTrue(cmds.any { it is ScreenCommand.ScrollUp })
+    }
+
+    @Test
+    fun testCsiScrollDown() {
+        val cmds = parse("\u001b[T")
+        assertTrue(cmds.any { it is ScreenCommand.ScrollDown })
+    }
+
+    @Test
+    fun testCsiCursorDown() {
+        val cmds = parse("\u001b[2B")
+        assertTrue(cmds.any { it is ScreenCommand.CursorDown && it.n == 2 })
+    }
+
+    @Test
+    fun testCsiCursorUpDefaultN() {
+        // 无参数默认 n=1
+        val cmds = parse("\u001b[A")
+        assertTrue(cmds.any { it is ScreenCommand.CursorUp && it.n == 1 })
+    }
 }
