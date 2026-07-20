@@ -1,0 +1,9 @@
+.gradle/
+build/
+/local.properties
+*.iml
+.idea/
+.cxx/
+
+# Node.js runtime binary (built by CI: .github/workflows/build-node.yml)
+app/src/main/assets/nodejs/
