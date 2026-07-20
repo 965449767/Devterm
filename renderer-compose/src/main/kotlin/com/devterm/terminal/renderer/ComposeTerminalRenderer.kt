@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -38,12 +39,39 @@ class ComposeTerminalRenderer(
         )
     }
 
-    fun draw(drawScope: DrawScope, frame: RenderFrame) {
+    /**
+     * 绘制终端帧。
+     * @param cursorBlink 光标是否可见（由上层 500ms 闪烁循环控制）
+     */
+    fun draw(drawScope: DrawScope, frame: RenderFrame, cursorBlink: Boolean = true) {
         if (!::charMetrics.isInitialized) initMetrics()
-        for (row in frame.dirtyRows) {
-            drawRow(drawScope, row, frame)
+
+        if (frame.dirtyRows.isEmpty()) {
+            if (cursorBlink) drawCursor(drawScope, frame)
+            return
         }
-        drawCursor(drawScope, frame)
+
+        // 增量裁剪：只重绘脏行所在的矩形区域，减少 GPU 绘制量
+        val minRow = frame.dirtyRows.min()
+        val maxRow = frame.dirtyRows.max()
+        val clipTop = minRow * charMetrics.height
+        val clipBottom = (maxRow + 1) * charMetrics.height
+        val clipRight = frame.cols * charMetrics.width
+
+        drawScope.clipRect(
+            left = 0f,
+            top = clipTop,
+            right = clipRight,
+            bottom = clipBottom
+        ) {
+            for (row in frame.dirtyRows) {
+                drawRow(this, row, frame)
+            }
+        }
+
+        if (cursorBlink) {
+            drawCursor(drawScope, frame)
+        }
     }
 
     private fun drawRow(drawScope: DrawScope, row: Int, frame: RenderFrame) {
@@ -63,6 +91,7 @@ class ComposeTerminalRenderer(
                 val cellWidth = charMetrics.width * w
 
                 val reverse = (cellFlags.toInt() and CellFlags.REVERSE) != 0
+                val conceal = (cellFlags.toInt() and CellFlags.CONCEAL) != 0
                 val drawBg = if (reverse) fgColor else bgColor
                 val drawFg = if (reverse) bgColor else fgColor
 
@@ -74,7 +103,8 @@ class ComposeTerminalRenderer(
                     )
                 }
 
-                if (c != ' ') {
+                // CONCEAL（隐藏）模式下不绘制字符
+                if (c != ' ' && !conceal) {
                     val glyph = glyphCache.get(c, drawFg, cellFlags, textStyle)
                     val charX = if (w > 1) {
                         x + (cellWidth - glyph.size.width) / 2f

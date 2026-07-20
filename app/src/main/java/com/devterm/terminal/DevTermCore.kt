@@ -2,10 +2,21 @@ package com.devterm.terminal
 
 import com.devterm.terminal.core.TerminalCore
 import com.devterm.terminal.core.backend.Backend
-import com.devterm.terminal.core.backend.BackendCallback
+import com.devterm.terminal.core.backend.BackendCapabilities
 import com.devterm.terminal.core.backend.TerminalSession
 import kotlinx.coroutines.flow.StateFlow
 
+/**
+ * App 层适配器：包装 TerminalCore，对外暴露简化的 API。
+ *
+ * 职责：
+ * 1. 持有 TerminalCore 实例（屏幕缓冲、Parser、Renderer）
+ * 2. 管理 Backend 生命周期
+ * 3. 暴露 Backend 能力给 UI 层（KeyboardHandler、Canvas）
+ *
+ * Backend 类型（ProcessBackend 或 PtyBackend）由 BackendFactory 决定，
+ * 调用方通过 [capabilities] 查询能力，据此调整行为（如 localEcho）。
+ */
 class DevTermCore(
     cols: Int = 80,
     rows: Int = 24
@@ -14,8 +25,13 @@ class DevTermCore(
     val frame: StateFlow<com.devterm.terminal.core.renderer.RenderFrame> get() = core.frame
 
     private var session: TerminalSession? = null
+    private var _capabilities: BackendCapabilities = BackendCapabilities.PIPE
+
+    /** 当前 Backend 的能力描述 */
+    val capabilities: BackendCapabilities get() = _capabilities
 
     fun attachBackend(backend: Backend) {
+        _capabilities = backend.capabilities
         val terminalSession = TerminalSession(
             backend = backend,
             outputCallback = { data -> core.onBackendOutput(data) }
@@ -43,68 +59,10 @@ class DevTermCore(
 
     fun resize(cols: Int, rows: Int) {
         core.resize(cols, rows)
+        session?.resize(cols, rows)
     }
 
     fun reset() {
         core.reset()
-    }
-}
-
-class AppBackend(
-    private val command: List<String>,
-    private val environment: Map<String, String> = emptyMap(),
-    private val workingDir: String? = null
-) : Backend {
-
-    private var process: Process? = null
-    private var stdin: java.io.OutputStream? = null
-    private var callback: BackendCallback? = null
-    private val buffer = ByteArray(8192)
-    private var running = false
-
-    override fun start(callback: BackendCallback) {
-        this.callback = callback
-        val pb = ProcessBuilder(command)
-        pb.redirectErrorStream(true)
-        if (workingDir != null) pb.directory(java.io.File(workingDir))
-        environment.forEach { (k, v) -> pb.environment()[k] = v }
-        process = pb.start()
-        stdin = process!!.outputStream
-        running = true
-
-        Thread {
-            val input = process!!.inputStream
-            try {
-                while (running) {
-                    val n = input.read(buffer)
-                    if (n <= 0) break
-                    callback.onOutput(buffer.copyOf(n))
-                }
-            } catch (_: Exception) {}
-        }.apply { name = "AppBackend-Reader"; isDaemon = true; start() }
-
-        Thread {
-            try {
-                val code = process!!.waitFor()
-                running = false
-                callback.onExit(code)
-            } catch (_: Exception) {}
-        }.apply { name = "AppBackend-Waiter"; isDaemon = true; start() }
-    }
-
-    override fun write(data: ByteArray) {
-        try {
-            stdin?.write(data)
-            stdin?.flush()
-        } catch (_: Exception) {}
-    }
-
-    override fun resize(cols: Int, rows: Int) {}
-
-    override fun stop() {
-        running = false
-        process?.destroy()
-        process = null
-        stdin = null
     }
 }
