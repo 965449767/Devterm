@@ -72,6 +72,7 @@
 | 5a | ✅ | PTY 架构准备（BackendCapabilities + PtyBackend 骨架 + Factory） |
 | 5b | 🔶 | libpty.so 代码完成，等待交叉编译（需网络安装工具链） |
 | 5c | 🔲 | libpty.so 接入测试（真机验证） |
+| 5d | ✅ | 制表位系统 + OSC 标题传递 + 光标样式 + 设置界面 |
 
 ### 代码合并状态
 - ✅ `trae/agent-dgPtkf` 已合并到 `main` 分支

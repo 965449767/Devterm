@@ -89,8 +89,7 @@ class VtParser {
             'D'.code -> commandQueue.add(ScreenCommand.LineFeed) // IND
             'M'.code -> commandQueue.add(ScreenCommand.ReverseLineFeed) // RI
             'E'.code -> { commandQueue.add(ScreenCommand.CarriageReturn); commandQueue.add(ScreenCommand.LineFeed) } // NEL
-            // ESC H 是 HTS（Horizontal Tab Set）：设置制表位。当前未实现制表位系统，暂忽略
-            'H'.code -> {}
+            'H'.code -> commandQueue.add(ScreenCommand.SetHorizontalTabStop)
             '7'.code -> commandQueue.add(ScreenCommand.SaveCursor) // DECSC
             '8'.code -> commandQueue.add(ScreenCommand.RestoreCursor) // DECRC
             // ESC F 是 CPL（Cursor Preceding Line）：光标上移一行并回到行首

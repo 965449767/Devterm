@@ -30,13 +30,13 @@ fun TerminalCanvas(
     onSizeChanged: (IntSize) -> Unit = {},
     defaultBg: Int = 0xFF1A1A2E.toInt(),
     cursorColor: Int = 0xFF89B4FA.toInt(),
-    cursorBlinkEnabled: Boolean = true
+    cursorBlinkEnabled: Boolean = true,
+    fontSize: Int = 14
 ) {
     val frame by snapshot.collectAsState()
     val textMeasurer = rememberTextMeasurer()
     val focusRequester = remember { FocusRequester() }
 
-    // 光标闪烁状态：500ms 切换一次
     var cursorBlink by remember { mutableStateOf(true) }
     LaunchedEffect(cursorBlinkEnabled) {
         if (cursorBlinkEnabled) {
@@ -55,6 +55,11 @@ fun TerminalCanvas(
             defaultBg = defaultBg,
             cursorColor = cursorColor
         ).also { it.initMetrics() }
+    }
+
+    LaunchedEffect(fontSize) {
+        renderer.textStyle = renderer.textStyle.copy(fontSize = fontSize.sp)
+        renderer.initMetrics()
     }
 
     LaunchedEffect(Unit) {

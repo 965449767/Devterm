@@ -26,6 +26,9 @@ class TerminalCore(
     private val _frame = MutableStateFlow(buildEmptyFrame())
     val frame: StateFlow<RenderFrame> = _frame.asStateFlow()
 
+    private val _title = MutableStateFlow("")
+    val title: StateFlow<String> = _title.asStateFlow()
+
     private var session: TerminalSession? = null
     private var sessionStarted = false
     private var renderJob: Job? = null
@@ -48,7 +51,12 @@ class TerminalCore(
             rows = screen.rows,
             cursorRow = screen.cursor.row,
             cursorCol = screen.cursor.col,
-            cursorVisible = screen.cursor.visible
+            cursorVisible = screen.cursor.visible,
+            cursorStyle = when (screen.cursor.style) {
+                com.devterm.terminal.core.screen.CursorState.CursorStyle.BLOCK -> RenderFrame.CursorStyle.BLOCK
+                com.devterm.terminal.core.screen.CursorState.CursorStyle.UNDERLINE -> RenderFrame.CursorStyle.UNDERLINE
+                com.devterm.terminal.core.screen.CursorState.CursorStyle.BAR -> RenderFrame.CursorStyle.BAR
+            }
         )
     }
 
@@ -59,9 +67,16 @@ class TerminalCore(
     fun onBackendOutput(data: ByteArray) {
         val commands = parser.consume(data)
         for (cmd in commands) {
-            screen.execute(cmd)
+            when (cmd) {
+                is com.devterm.terminal.core.parser.ScreenCommand.SetTitle -> {
+                    _title.value = cmd.title
+                }
+                is com.devterm.terminal.core.parser.ScreenCommand.SetIconName -> {
+                    _title.value = cmd.name
+                }
+                else -> screen.execute(cmd)
+            }
         }
-        // 统一通过 FrameQueue 节流，清屏等操作不再特殊处理
         frameQueue.notifyDirty()
     }
 

@@ -38,3 +38,21 @@ fun DevTermTheme(
         content = content
     )
 }
+
+@Composable
+fun DevTermTheme(
+    terminalTheme: TerminalTheme,
+    content: @Composable () -> Unit
+) {
+    val colorScheme = darkColorScheme(
+        primary = terminalTheme.primary,
+        background = terminalTheme.surface,
+        surface = terminalTheme.surface,
+        onSurface = terminalTheme.onSurface
+    )
+
+    MaterialTheme(
+        colorScheme = colorScheme,
+        content = content
+    )
+}

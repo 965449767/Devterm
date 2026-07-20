@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
  * 1. 持有 TerminalCore 实例（屏幕缓冲、Parser、Renderer）
  * 2. 管理 Backend 生命周期
  * 3. 暴露 Backend 能力给 UI 层（KeyboardHandler、Canvas）
+ * 4. 传递 OSC 标题变化给 UI 层
  *
  * Backend 类型（ProcessBackend 或 PtyBackend）由 BackendFactory 决定，
  * 调用方通过 [capabilities] 查询能力，据此调整行为（如 localEcho）。
@@ -23,6 +24,9 @@ class DevTermCore(
 ) {
     val core = TerminalCore(cols, rows)
     val frame: StateFlow<com.devterm.terminal.core.renderer.RenderFrame> get() = core.frame
+
+    /** 窗口标题（来自 OSC 0/1/2 序列） */
+    val title: StateFlow<String> get() = core.title
 
     private var session: TerminalSession? = null
     private var _capabilities: BackendCapabilities = BackendCapabilities.PIPE

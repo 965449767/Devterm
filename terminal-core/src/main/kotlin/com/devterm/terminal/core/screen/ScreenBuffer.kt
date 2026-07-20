@@ -30,6 +30,9 @@ class ScreenBuffer(
 
     private var wrapPending: Boolean = false
 
+    private val tabWidth = 8
+    private val tabStops = BooleanArray(cols) { col -> col % tabWidth == 0 }
+
     init {
         val total = cols * rows
         chars = CharArray(total) { ' ' }
@@ -74,6 +77,8 @@ class ScreenBuffer(
         scrollRegionTop = 0
         dirty.resize(newRows)
         dirty.markAll()
+
+        tabStops = BooleanArray(newCols) { col -> col % tabWidth == 0 }
     }
 
     fun execute(command: ScreenCommand) = when (command) {
@@ -101,6 +106,7 @@ class ScreenBuffer(
         is ScreenCommand.InsertChars -> insertChars(command.n)
         is ScreenCommand.SaveCursor -> saveCursor()
         is ScreenCommand.RestoreCursor -> restoreCursor()
+        is ScreenCommand.SetHorizontalTabStop -> setHorizontalTabStop()
         is ScreenCommand.SetSgr -> setSgr(command.params)
         is ScreenCommand.SetScrollRegion -> setScrollRegion(command.top, command.bottom)
         is ScreenCommand.SetMode -> setMode(command.mode, command.set)
@@ -442,12 +448,23 @@ class ScreenBuffer(
         wrapPending = false
     }
 
-    /** Tab 键：跳到下一个 8 列制表位 */
+    /** Tab 键：跳到下一个制表位 */
     private fun tab() {
-        val tabStop = 8
-        val nextTab = ((cursor.col / tabStop) + 1) * tabStop
-        cursor = cursor.withCol(nextTab.coerceAtMost(cols - 1))
+        for (col in (cursor.col + 1) until cols) {
+            if (tabStops[col]) {
+                cursor = cursor.withCol(col)
+                dirty.mark(cursor.row)
+                return
+            }
+        }
+        cursor = cursor.withCol(cols - 1)
         dirty.mark(cursor.row)
+    }
+
+    /** HTS（Horizontal Tab Set）：在当前光标列设置制表位 */
+    private fun setHorizontalTabStop() {
+        val col = cursor.col.coerceIn(0, cols - 1)
+        tabStops[col] = true
     }
 
     /** ECH：从光标位置向右清除 n 个字符（不移动光标） */

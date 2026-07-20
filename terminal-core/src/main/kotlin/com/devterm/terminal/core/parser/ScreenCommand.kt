@@ -25,6 +25,7 @@ sealed class ScreenCommand {
     data class InsertChars(val n: Int) : ScreenCommand()
     object SaveCursor : ScreenCommand()
     object RestoreCursor : ScreenCommand()
+    object SetHorizontalTabStop : ScreenCommand()
     data class SetSgr(val params: List<Int>) : ScreenCommand()
     data class SetTitle(val title: String) : ScreenCommand()
     data class SetIconName(val name: String) : ScreenCommand()

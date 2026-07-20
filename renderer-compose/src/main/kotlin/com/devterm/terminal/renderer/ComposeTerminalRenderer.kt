@@ -20,7 +20,7 @@ data class CharMetrics(
 
 class ComposeTerminalRenderer(
     private val textMeasurer: TextMeasurer,
-    private val textStyle: TextStyle = TextStyle(
+    textStyle: TextStyle = TextStyle(
         fontSize = 14.sp,
         fontFamily = FontFamily.Monospace,
         color = Color.White
@@ -28,6 +28,12 @@ class ComposeTerminalRenderer(
     private val defaultBg: Int = 0xFF1A1A2E.toInt(),
     private val cursorColor: Int = 0xFF89B4FA.toInt()
 ) {
+    var textStyle: TextStyle = textStyle
+        set(value) {
+            field = value
+            invalidateAll()
+        }
+
     lateinit var charMetrics: CharMetrics; private set
     private val glyphCache = GlyphCache(textMeasurer)
 
@@ -136,12 +142,36 @@ class ComposeTerminalRenderer(
             if (!frame.cursorVisible) return
             val x = frame.cursorCol * charMetrics.width
             val y = frame.cursorRow * charMetrics.height
-            drawRect(
-                color = Color(cursorColor),
-                topLeft = Offset(x, y),
-                size = Size(charMetrics.width, charMetrics.height),
-                alpha = 0.5f
-            )
+            val cursorColor = Color(this@ComposeTerminalRenderer.cursorColor)
+
+            when (frame.cursorStyle) {
+                RenderFrame.CursorStyle.BLOCK -> {
+                    drawRect(
+                        color = cursorColor,
+                        topLeft = Offset(x, y),
+                        size = Size(charMetrics.width, charMetrics.height),
+                        alpha = 0.5f
+                    )
+                }
+                RenderFrame.CursorStyle.UNDERLINE -> {
+                    val underlineY = y + charMetrics.height - 2f
+                    drawLine(
+                        color = cursorColor,
+                        start = Offset(x, underlineY),
+                        end = Offset(x + charMetrics.width, underlineY),
+                        strokeWidth = 2f
+                    )
+                }
+                RenderFrame.CursorStyle.BAR -> {
+                    val barWidth = 2f
+                    val barX = x + (charMetrics.width - barWidth) / 2f
+                    drawRect(
+                        color = cursorColor,
+                        topLeft = Offset(barX, y),
+                        size = Size(barWidth, charMetrics.height)
+                    )
+                }
+            }
         }
     }
 

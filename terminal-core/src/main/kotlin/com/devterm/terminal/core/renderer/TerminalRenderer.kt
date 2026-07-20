@@ -15,5 +15,12 @@ data class RenderFrame(
     val rows: Int,
     val cursorRow: Int,
     val cursorCol: Int,
-    val cursorVisible: Boolean
+    val cursorVisible: Boolean,
+    val cursorStyle: CursorStyle = CursorStyle.BLOCK
 )
+
+enum class CursorStyle {
+    BLOCK,
+    UNDERLINE,
+    BAR
+}
