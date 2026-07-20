@@ -1,45 +1,65 @@
 # DevTerm 当前任务状态
 
 > 最后更新：2026-07-20
-> 阶段：Phase 1-4 已完成，Phase 5 待开始
+> 阶段：Phase 1-4 已完成，Phase 5 架构准备已完成
 
 ## 本次会话完成内容
 
-### 1. Bug 修复（15 个问题）
+### Phase 5 架构准备（PTY 恢复第一阶段）
 
-详见上一轮会话的修复报告。关键修复：
-- P0: eraseDisplay 脏行标记不完整 → 修复为标记从光标行到末尾的所有行
-- P0: UnicodeWidthCache 并发安全 → 使用 `getOrPut` 原子操作
-- P1: VtParser Tab 键 cursorCol 未更新 → 新增 `ScreenCommand.Tab`，由 ScreenBuffer 处理
-- P1: ESC H / ESC F / CSI X 映射错误 → 修正为 HTS(忽略) / CPL / ECH
-- P1: putChar 自动换行 wrapPending 逻辑矛盾 → 修复为 deferred 换行
-- P2: AppBackend 与 ProcessBackend 重复 → 删除 AppBackend，复用 ProcessBackend
-- P2: DirtyTracker.resize 行为不一致 → 统一清空
-- P3: 光标闪烁 → 实现 500ms 闪烁（TerminalCanvas）
-- P3: Canvas 增量裁剪 → 实现 clipRect 脏行裁剪
-- 清理: EraseDisplay 特殊处理、CONCEAL 常量、VtParser 无意义条件、putChar flags 覆盖
+本次完成了 PTY 恢复的**架构层面**工作，为未来真正的 PTY 实现打好基础。
 
-### 2. Phase 2 遗留测试补全
+#### 1. Backend 能力抽象
 
-- `ScrollbackBufferTest.kt`：7 个测试（基础写入、越界访问、循环覆盖、环绕索引、清空、容量1边界、大量写入）
-- `ScreenBufferTest.kt` 中 VtParserTest 扩展：新增 20+ 个测试覆盖 CSI H/A/B/C/D/G/L/M/@/P/X/d/S/T/n/s/u/m/r 和 ESC 7/8/D/M/E/F/c
+- **新建** `BackendCapabilities.kt`：数据类描述 Backend 能力（isPty、needsLocalEcho、supportsSignals、supportsResize、supportsColor）
+- **修改** `Backend.kt`：接口添加 `val capabilities: BackendCapabilities`
+- 提供 `PIPE` 和 `PTY` 两个预设常量
 
-### 3. Phase 3 性能基准 + 回归测试
+#### 2. ProcessBackend 改进
 
-- `TerminalBenchmark.kt` 扩展至 10 项基准：大文件 cat、VT 序列解析、纯 ScreenBuffer、DirtyTracker、快速滚动、内存占用对比
-- `BenchmarkTest.kt` 新增 6 个测试入口
-- `RegressionTest.kt` 新增 20+ 个端到端回归测试
+- 实现 `capabilities = BackendCapabilities.PIPE`
+- 移除 `!!` 强制非空断言（符合编码规范）
+- 完善文档说明管道模式的限制
 
-### 4. Phase 4 增量绘制 + 光标闪烁（在 bug 修复中同步完成）
+#### 3. PtyBackend 骨架（未来 .so 实现的接入点）
 
-- `ComposeTerminalRenderer.kt`：clipRect 脏行裁剪
-- `TerminalCanvas.kt`：500ms 光标闪烁
-- `CellFlags.kt`：CONCEAL 常量
-- `ComposeTerminalRenderer.kt`：CONCEAL 隐藏文本不绘制
+- **新建** `PtyBackend.kt`：完整的 PTY Backend 骨架
+- 5 个 `external fun` 声明（nativeCreatePty、nativeSetWindowSize、nativeKillChild、nativeClosePty、nativeWaitForChild）
+- `isAvailable()` 检测 libpty.so 是否可加载
+- 当前 `nativeCreatePty` 无实现，会返回 false，调用方自动 fallback 到 ProcessBackend
 
-### 5. 文档更新
+#### 4. BackendFactory 工厂模式
 
-- `PHASES.md`：Phase 2/3/4 验证清单全部勾选，阶段总表更新状态
+- **新建** `BackendFactory.kt`：统一 Backend 创建入口
+- 自动检测 PTY 可用性，选择 PtyBackend 或 ProcessBackend
+- 封装环境变量构建逻辑（TERM、HOME、PATH 等）
+
+#### 5. KeyboardHandlerNew 改进
+
+- 明确处理 Ctrl+A~Z → \x01-\x1A 控制字符
+- 修复原来的死代码（`seq.firstOrNull()` 分支永远不会匹配 'a'..'z'）
+- 新增 `needsLocalEcho` 属性，供 UI 层查询
+- 清理转义序列（DEL 键从 `\u001b\u007F` 改为正确的 `\u007F`）
+
+#### 6. DevTermCore/TabManagerNew 接入
+
+- DevTermCore 暴露 `capabilities` 属性
+- resize 时同步通知 Backend（`session?.resize()`）
+- TabManagerNew 使用 BackendFactory 创建 Backend
+- KeyboardHandler 接收 capabilities 参数
+
+### 文件变更清单
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `terminal-core/.../BackendCapabilities.kt` | 新建 | 能力数据类 |
+| `terminal-core/.../Backend.kt` | 修改 | 接口添加 capabilities |
+| `terminal-core/.../ProcessBackend.kt` | 修改 | 实现 capabilities，移除 `!!` |
+| `app/.../PtyBackend.kt` | 新建 | PTY 骨架，待 .so 实现 |
+| `app/.../BackendFactory.kt` | 新建 | Backend 工厂 |
+| `app/.../KeyboardHandlerNew.kt` | 重写 | Ctrl 键映射，needsLocalEcho |
+| `app/.../DevTermCore.kt` | 修改 | 暴露 capabilities，resize 同步 |
+| `app/.../TabManagerNew.kt` | 修改 | 使用 BackendFactory |
 
 ## 当前状态
 
@@ -47,53 +67,59 @@
 |-------|------|------|
 | 1 | ✅ | SoA + Dirty Region + Ring Buffer |
 | 2 | ✅ | Renderer API + Glyph Cache + Frame Queue + 测试补全 |
-| 3 | ✅ | 10 项基准测试 + 20+ 回归测试 |
+| 3 | ✅ | 10 项基准测试 + 50+ 单元测试 + 20+ 回归测试 |
 | 4 | ✅ | 增量 Canvas + 光标闪烁 + CONCEAL |
-| 5 | 🔲 | PTY / SSH / 文件浏览器（待开始）|
+| 5a | ✅ | PTY 架构准备（BackendCapabilities + PtyBackend 骨架 + Factory） |
+| 5b | 🔲 | libpty.so 交叉编译（需要 NDK 环境） |
+| 5c | 🔲 | libpty.so 接入测试（真机验证） |
 
 ## 未解决风险
 
-1. **无法本地测试**：网络不通，Gradle 9.1.0 和依赖无法下载，所有测试和基准未实际运行
-   - 缓解：通过静态语法检查（子 agent）+ 逻辑手动追踪验证
-   - 待办：网络恢复后运行 `./gradlew :terminal-core:test :benchmark:test`
+1. **无法本地测试**：网络不通，Gradle 9.1.0 和依赖无法下载
+   - 缓解：通过子 agent 静态语法检查
+   - 待办：网络恢复后运行 `./gradlew :terminal-core:test :app:assembleDebug`
 
-2. **真机性能验证缺失**：Phase 3 的"大文件 cat < 50%"、"GC 暂停 < 10%"、"FPS > 55"需真机验证
-   - 待办：在宇宙 B 构建后用 `aidev-build-request` 安装到手机测试
+2. **PTY 真正实现需要 .so**：当前 PtyBackend 只是骨架
+   - 需要：交叉编译 libpty.so（C 代码封装 openpty + fork + exec）
+   - 障碍：NDK 不可用、项目规则"不引入原生代码"
+   - 待办：评估是否放宽规则，或寻找纯 Kotlin 的 PTY 替代方案
 
-3. **ScrollbackBuffer 列数变化**：resize 改变列数时，scrollback 中旧行的列数不匹配
-   - 待办：Phase 5 或独立任务中处理
+3. **SELinux 限制**：即使有 .so，/dev/ptmx 访问可能被 SELinux 拒绝
+   - 待办：真机测试 SELinux 策略
 
 ## 下一步计划
 
 ### 短期（网络恢复后）
-1. 运行 `./gradlew :terminal-core:test :benchmark:test` 验证所有测试通过
-2. 修复测试中发现的问题
-3. 运行 `aidev-build-request --project /workspace/DevTerm` 构建安装包
+1. 运行 `./gradlew :terminal-core:test :app:assembleDebug` 验证编译
+2. 真机测试 Ctrl+C、Ctrl+D、Ctrl+Z 是否能发送给 shell
+3. 真机测试 localEcho 行为
 
-### 中期（Phase 5）
-1. **PTY 恢复**：交叉编译 openpty wrapper .so，新增 PtyBackend
-2. **多 Tab**：TerminalCore 天然支持多实例，UI 层实现 Tab 切换
-3. **会话 Checkpoint**：序列化 ScreenBuffer 状态
+### 中期（Phase 5b - libpty.so）
+1. 编写 C 代码：`pty.c` 封装 openpty + fork + execve + ioctl(TIOCSWINSZ)
+2. 交叉编译为 arm64-v8a 的 libpty.so
+3. 放入 `app/src/main/jniLibs/arm64-v8a/`
+4. 测试 `PtyBackend.isAvailable()` 返回 true
 
 ### 长期
-1. SSH 客户端（Apache MINA）
-2. 文件浏览器
-3. 真机性能基准对比（旧版 vs 新版）
+1. 真机验证 PTY 模式下 vim/top/Ctrl+C 是否正常工作
+2. 处理不同厂商的 SELinux 策略差异
+3. SSH 客户端（Apache MINA）
+4. 文件浏览器
 
 ## 关键决策记录
 
 > 提醒：以下决策应记录到 `docs/decisions.md`
 
-1. **Tab 键由 ScreenBuffer 处理**：Parser 不维护光标状态，新增 `ScreenCommand.Tab` 命令
-2. **wrapPending deferred 换行**：光标到行尾时不立即换行，设置标志，下一个字符触发换行
-3. **删除 AppBackend**：直接复用 terminal-core 的 ProcessBackend，避免代码重复
-4. **clipRect 增量裁剪**：使用 Compose 的 clipRect 限制绘制区域到脏行范围
-5. **SetScrollRegion bottom 转换**：Parser 中 bottom 参数从 1-indexed 转为 0-indexed（-1），ScreenBuffer 处理 <=0 的默认情况
+1. **Backend 能力抽象**：通过 `BackendCapabilities` 数据类描述不同 Backend 的能力，UI 层据此调整行为（localEcho、信号处理等），而非在调用处硬编码 `if (backend is ProcessBackend)`
+2. **BackendFactory 工厂模式**：统一 Backend 创建，未来添加新 Backend 类型（如 SSH）时只需扩展工厂，上层代码不变
+3. **PtyBackend 骨架先行**：先写好完整接口和 external 方法声明，.so 实现后填充。这样架构稳定，未来工作集中在 C 代码编译
+4. **Ctrl 键显式映射**：用 `when (keyCode)` 显式映射 A-Z，而非依赖 `getUnicodeChar(metaState)` 的不确定行为
+5. **needsLocalEcho 属性**：让 UI 层查询 Backend 能力，而非假设始终需要 localEcho。为未来 PTY 模式做好准备
 
 ## 重复出现的错误
 
 > 提醒：以下错误应记录到 `docs/error-journal.md`
 
-1. **Parser 维护光标状态**：VtParser 曾内部维护 cursorCol/cursorRow 但未更新，导致 Tab 键错误。教训：Parser 应输出不可变 Command，不维护状态
-2. **1-indexed vs 0-indexed 转换**：CSI 序列参数是 1-indexed，容易忘记减 1（如 SetScrollRegion 的 bottom）。教训：所有 1-indexed 转换在 Parser 层统一处理
-3. **脏行标记不完整**：eraseDisplay mode 0/1 只标记了光标行，应标记整个受影响范围。教训：批量修改屏幕时，标记所有受影响行
+1. **KeyboardHandlerNew 死代码**：原代码 `if (ctrl) { val c = seq.firstOrNull(); if (c in 'a'..'z') }` 中 seq 是功能键的转义序列（以 ESC 开头），永远不会匹配 'a'..'z'。教训：条件分支要实际可达，否则等于没有实现
+2. **DEL 键转义序列错误**：原来发送 `\u001b\u007F`（ESC + DEL），正确应为 `\u007F`（单独 DEL）。教训：参考 xterm 文档确认转义序列
+3. **`!!` 强制非空断言**：ProcessBackend 中 `process!!.outputStream` 违反编码规范。教训：即使逻辑上不会为 null，也应使用安全调用或局部变量

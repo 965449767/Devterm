@@ -2,6 +2,19 @@ package com.devterm.terminal.core.backend
 
 import java.io.OutputStream
 
+/**
+ * 基于 ProcessBuilder 的管道模式 Backend。
+ *
+ * 特点：
+ * - 不需要原生代码，纯 Kotlin 实现
+ * - 无 PTY，shell 的 isatty() 返回 false
+ * - 不支持 SIGINT（Ctrl+C 只能作为 \x03 字符发送给 shell stdin）
+ * - 不支持 SIGWINCH（resize 是 no-op）
+ * - 需要 App 层 localEcho 补偿回显
+ *
+ * 这是当前 Android SELinux 限制下的默认实现。
+ * 未来 PtyBackend 可用时，应优先使用 PtyBackend。
+ */
 class ProcessBackend(
     private val command: List<String>,
     private val environment: Map<String, String> = emptyMap(),
@@ -14,6 +27,9 @@ class ProcessBackend(
     private var running = false
     private val buffer = ByteArray(8192)
 
+    /** 管道模式的能力：无 PTY、需要 localEcho、无信号支持 */
+    override val capabilities: BackendCapabilities = BackendCapabilities.PIPE
+
     override fun start(callback: BackendCallback) {
         this.callback = callback
         val pb = ProcessBuilder(command)
@@ -22,8 +38,9 @@ class ProcessBackend(
             pb.directory(java.io.File(workingDir))
         }
         environment.forEach { (k, v) -> pb.environment()[k] = v }
-        process = pb.start()
-        stdin = process!!.outputStream
+        val p = pb.start()
+        process = p
+        stdin = p.outputStream
         running = true
 
         Thread { readerLoop() }.apply {
@@ -43,13 +60,14 @@ class ProcessBackend(
         try {
             stdin?.write(data)
             stdin?.flush()
-        } catch (e: Exception) {
-            // process may have exited
+        } catch (_: Exception) {
+            // 进程可能已退出，忽略写入错误
         }
     }
 
+    /** 管道模式不支持 resize 通知（无 SIGWINCH） */
     override fun resize(cols: Int, rows: Int) {
-        // no-op for ProcessBackend (no PTY)
+        // no-op：管道模式无法通知子进程窗口大小变化
     }
 
     override fun stop() {
