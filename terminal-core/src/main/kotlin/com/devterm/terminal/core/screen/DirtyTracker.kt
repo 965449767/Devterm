@@ -5,10 +5,12 @@ import java.util.BitSet
 class DirtyTracker(private var rows: Int = 24) {
     private val dirty = BitSet(rows)
 
+    /**
+     * 调整脏行追踪容量。
+     * 无论变大变小都清空标记，由调用方负责重新 markAll()。
+     */
     fun resize(newRows: Int) {
-        if (newRows > rows) {
-            dirty.clear()
-        }
+        dirty.clear()
         rows = newRows
     }
 

@@ -108,6 +108,74 @@ class ScreenBufferTest {
         assertEquals(100, sb.cols)
         assertEquals(30, sb.rows)
     }
+
+    @Test
+    fun testTabMovesToNextTabStop() {
+        val sb = ScreenBuffer(80, 24)
+        // 从第 0 列按 Tab，应跳到第 8 列
+        sb.execute(ScreenCommand.Tab)
+        assertEquals(8, sb.cursor.col)
+        // 从第 8 列按 Tab，应跳到第 16 列
+        sb.execute(ScreenCommand.Tab)
+        assertEquals(16, sb.cursor.col)
+    }
+
+    @Test
+    fun testEraseChars() {
+        val sb = ScreenBuffer(80, 24)
+        // 写入 5 个字符
+        repeat(5) { sb.execute(ScreenCommand.WriteGlyph('A', 1)) }
+        // 从当前位置（col=5）向右清除 3 个字符
+        sb.execute(ScreenCommand.EraseChars(3))
+        // 光标不应移动
+        assertEquals(5, sb.cursor.col)
+        // col 5,6,7 应为空格
+        assertEquals(' ', sb.chars[5])
+        assertEquals(' ', sb.chars[6])
+        assertEquals(' ', sb.chars[7])
+    }
+
+    @Test
+    fun testSetCursorRow() {
+        val sb = ScreenBuffer(80, 24)
+        sb.execute(ScreenCommand.SetCursorRow(10))
+        assertEquals(10, sb.cursor.row)
+        // 列应保持不变
+        assertEquals(0, sb.cursor.col)
+    }
+
+    @Test
+    fun testEraseDisplayDirtyRows() {
+        val sb = ScreenBuffer(80, 24)
+        // 先写一些内容
+        sb.execute(ScreenCommand.MoveCursor(5, 5))
+        sb.execute(ScreenCommand.WriteGlyph('X', 1))
+        // mode 0：从光标清到末尾，应标记从光标行到末尾的所有行
+        sb.execute(ScreenCommand.MoveCursor(3, 3))
+        sb.dirty.consume() // 清空脏标记
+        sb.execute(ScreenCommand.EraseDisplay(0))
+        val dirty0 = sb.dirty.consume()
+        assertTrue(dirty0.contains(3))
+        assertTrue(dirty0.contains(23))
+        assertTrue(dirty0.size >= 21) // 行 3 到 23
+    }
+
+    @Test
+    fun testAutoWrapPending() {
+        // 测试自动换行的 deferred 逻辑
+        val sb = ScreenBuffer(5, 3) // 5 列 3 行的小屏幕
+        // 写入 5 个字符填满第一行
+        repeat(5) { sb.execute(ScreenCommand.WriteGlyph('A', 1)) }
+        // 光标应在行尾（col=4），wrapPending=true
+        assertEquals(4, sb.cursor.col)
+        // 再写一个字符，应触发换行
+        sb.execute(ScreenCommand.WriteGlyph('B', 1))
+        // 现在光标应在第二行
+        assertEquals(1, sb.cursor.row)
+        assertEquals(1, sb.cursor.col)
+        // 第二行第一个字符应该是 'B'
+        assertEquals('B', sb.chars[5])
+    }
 }
 
 class VtParserTest {
@@ -167,5 +235,33 @@ class VtParserTest {
         val cmds = parse("\u001b[2J\u001b[H")
         assertTrue(cmds.any { it is ScreenCommand.EraseDisplay && it.mode == 2 })
         assertTrue(cmds.any { it is ScreenCommand.MoveCursor && it.row == 0 && it.col == 0 })
+    }
+
+    @Test
+    fun testTabKey() {
+        val cmds = parse("\t")
+        assertTrue(cmds.any { it is ScreenCommand.Tab })
+    }
+
+    @Test
+    fun testCsiEraseChars() {
+        // CSI 3 X = ECH (Erase 3 Characters)
+        val cmds = parse("\u001b[3X")
+        assertTrue(cmds.any { it is ScreenCommand.EraseChars && it.n == 3 })
+    }
+
+    @Test
+    fun testCsiVerticalPositionAbsolute() {
+        // CSI 10 d = VPA (Vertical Position Absolute, row 10)
+        val cmds = parse("\u001b[10d")
+        assertTrue(cmds.any { it is ScreenCommand.SetCursorRow && it.row == 9 })
+    }
+
+    @Test
+    fun testEscCpl() {
+        // ESC F = CPL (Cursor Preceding Line)
+        val cmds = parse("\u001bF")
+        assertTrue(cmds.any { it is ScreenCommand.CarriageReturn })
+        assertTrue(cmds.any { it is ScreenCommand.CursorUp && it.n == 1 })
     }
 }

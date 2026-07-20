@@ -2,7 +2,6 @@ package com.devterm.terminal.core.screen
 
 import com.devterm.terminal.core.parser.ScreenCommand
 import com.devterm.terminal.core.scrollback.ScrollbackBuffer
-import com.devterm.terminal.core.unicode.UnicodeWidthCache
 
 class ScreenBuffer(
     var cols: Int = 80,
@@ -86,13 +85,16 @@ class ScreenBuffer(
         is ScreenCommand.CursorForward -> cursorForward(command.n)
         is ScreenCommand.CursorBack -> cursorBack(command.n)
         is ScreenCommand.SetCursorCol -> setCursorCol(command.col)
+        is ScreenCommand.SetCursorRow -> setCursorRow(command.row)
         is ScreenCommand.CarriageReturn -> carriageReturn()
         is ScreenCommand.LineFeed -> lineFeed()
         is ScreenCommand.ReverseLineFeed -> reverseLineFeed()
         is ScreenCommand.ScrollUp -> scrollUp()
         is ScreenCommand.ScrollDown -> scrollDown()
+        is ScreenCommand.Tab -> tab()
         is ScreenCommand.EraseDisplay -> eraseDisplay(command.mode)
         is ScreenCommand.EraseLine -> eraseLine(command.mode)
+        is ScreenCommand.EraseChars -> eraseChars(command.n)
         is ScreenCommand.DeleteChars -> deleteChars(command.n)
         is ScreenCommand.InsertLines -> insertLines(command.n)
         is ScreenCommand.DeleteLines -> deleteLines(command.n)
@@ -110,13 +112,15 @@ class ScreenBuffer(
     private fun index(row: Int, col: Int) = row * cols + col
 
     private fun putChar(c: Char, width: Int) {
-        if (wrapPending && autoWrap && c != '\n') {
-            if (cursor.col > 0 || cursor.row < rows - 1) {
-                if (cursor.row < rows - 1) {
-                    cursor = cursor.withRow(cursor.row + 1)
-                }
-                cursor = cursor.withCol(0)
+        // 处理待换行：上一个字符填满行尾时，现在才真正换行到下一行第0列
+        if (wrapPending && autoWrap) {
+            if (cursor.row < rows - 1) {
+                cursor = cursor.withRow(cursor.row + 1)
+            } else {
+                // 最后一行：触发滚动
+                scrollUp()
             }
+            cursor = cursor.withCol(0)
             wrapPending = false
         }
 
@@ -129,18 +133,16 @@ class ScreenBuffer(
         bg[i] = currentBg
         flags[i] = CellFlags.setWidth(currentFlags, width)
 
-        if (c == ' ' && width == 1) {
-            flags[i] = currentFlags
-        }
-
         dirty.mark(row)
 
+        // 计算下一个光标位置
         val nextCol = cursor.col + width
         if (nextCol >= cols) {
             if (autoWrap) {
+                // 设置待换行标志，光标暂时停留在行尾
                 wrapPending = true
             }
-            cursor = cursor.withCol(0)
+            // 非自动换行模式：光标钳制在最后一列
         } else {
             cursor = cursor.withCol(nextCol)
         }
@@ -239,18 +241,26 @@ class ScreenBuffer(
     fun eraseDisplay(mode: Int) {
         when (mode) {
             0 -> {
+                // 从光标位置清到屏幕末尾
                 val start = index(cursor.row, cursor.col)
                 for (i in start until cols * rows) {
                     chars[i] = ' '; fg[i] = defaultFg; bg[i] = defaultBg; flags[i] = 0
                 }
-                dirty.mark(cursor.row)
+                // 标记从光标行到末尾的所有行均为脏行
+                for (r in cursor.row until rows) {
+                    dirty.mark(r)
+                }
             }
             1 -> {
+                // 从屏幕开头清到光标位置（含光标）
                 val end = index(cursor.row, cursor.col) + 1
                 for (i in 0 until end.coerceAtMost(chars.size)) {
                     chars[i] = ' '; fg[i] = defaultFg; bg[i] = defaultBg; flags[i] = 0
                 }
-                dirty.mark(cursor.row)
+                // 标记从开头到光标行的所有行均为脏行
+                for (r in 0..cursor.row) {
+                    dirty.mark(r)
+                }
             }
             2 -> {
                 chars.fill(' ')
@@ -422,6 +432,36 @@ class ScreenBuffer(
 
     private fun setCursorCol(col: Int) {
         cursor = cursor.withCol(col.coerceIn(0, cols - 1))
+        wrapPending = false
+    }
+
+    private fun setCursorRow(row: Int) {
+        val r = if (originMode) (row + scrollRegionTop).coerceIn(scrollRegionTop, scrollRegionBottom)
+               else row.coerceIn(0, rows - 1)
+        cursor = cursor.withRow(r)
+        wrapPending = false
+    }
+
+    /** Tab 键：跳到下一个 8 列制表位 */
+    private fun tab() {
+        val tabStop = 8
+        val nextTab = ((cursor.col / tabStop) + 1) * tabStop
+        cursor = cursor.withCol(nextTab.coerceAtMost(cols - 1))
+        dirty.mark(cursor.row)
+    }
+
+    /** ECH：从光标位置向右清除 n 个字符（不移动光标） */
+    private fun eraseChars(n: Int) {
+        val row = cursor.row
+        val end = (cursor.col + n).coerceAtMost(cols)
+        for (c in cursor.col until end) {
+            val i = index(row, c)
+            chars[i] = ' '
+            fg[i] = defaultFg
+            bg[i] = defaultBg
+            flags[i] = 0
+        }
+        dirty.mark(row)
     }
 
     private fun saveCursor() {
@@ -450,11 +490,13 @@ class ScreenBuffer(
                 4 -> currentFlags = (currentFlags.toInt() or CellFlags.UNDERLINE).toByte()
                 5, 6 -> currentFlags = (currentFlags.toInt() or CellFlags.BLINK).toByte()
                 7 -> currentFlags = (currentFlags.toInt() or CellFlags.REVERSE).toByte()
+                8 -> currentFlags = (currentFlags.toInt() or CellFlags.CONCEAL).toByte()
                 22 -> currentFlags = (currentFlags.toInt() and CellFlags.BOLD.inv() and CellFlags.DIM.inv()).toByte()
                 23 -> currentFlags = (currentFlags.toInt() and CellFlags.ITALIC.inv()).toByte()
                 24 -> currentFlags = (currentFlags.toInt() and CellFlags.UNDERLINE.inv()).toByte()
                 25 -> currentFlags = (currentFlags.toInt() and CellFlags.BLINK.inv()).toByte()
                 27 -> currentFlags = (currentFlags.toInt() and CellFlags.REVERSE.inv()).toByte()
+                28 -> currentFlags = (currentFlags.toInt() and CellFlags.CONCEAL.inv()).toByte()
                 30, 31, 32, 33, 34, 35, 36, 37 -> currentFg = ansiColor(p - 30)
                 38 -> {
                     val (color, skip) = parseExtendedColor(params, i)

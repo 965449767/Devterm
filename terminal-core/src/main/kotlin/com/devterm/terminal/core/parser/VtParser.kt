@@ -57,11 +57,8 @@ class VtParser {
             b == 0x0D -> commandQueue.add(ScreenCommand.CarriageReturn)
             b == 0x07 -> commandQueue.add(ScreenCommand.Bell(1))
             b == 0x08 -> commandQueue.add(ScreenCommand.CursorBack(1))
-            b == 0x09 -> {
-                val tabStop = 8
-                val nextTab = ((cursorCol / tabStop) + 1) * tabStop
-                commandQueue.add(ScreenCommand.CursorForward(nextTab - cursorCol))
-            }
+            // Tab 键由 ScreenBuffer 根据当前光标位置处理，Parser 不维护光标状态
+            b == 0x09 -> commandQueue.add(ScreenCommand.Tab)
             b == 0x0B || b == 0x0C -> { commandQueue.add(ScreenCommand.CarriageReturn); commandQueue.add(ScreenCommand.LineFeed) }
             b in 0x20..0x7E -> {
                 val c = b.toChar()
@@ -76,25 +73,36 @@ class VtParser {
         }
     }
 
-    private var cursorCol = 0
-    private var cursorRow = 0
-
     private fun handleEsc(b: Int) {
         state = State.GROUND
         when (b) {
-            '['.code -> state = State.CSI_PARAM
+            '['.code -> {
+                state = State.CSI_PARAM
+                params.clear()
+                currentParam = 0
+                intermediates.clear()
+                privateMarker = '\u0000'
+            }
             ']'.code -> { state = State.OSC_STRING; oscString = StringBuilder() }
             'P'.code -> state = State.DCS_ENTRY
             '\\'.code -> {} // ST
             'D'.code -> commandQueue.add(ScreenCommand.LineFeed) // IND
             'M'.code -> commandQueue.add(ScreenCommand.ReverseLineFeed) // RI
             'E'.code -> { commandQueue.add(ScreenCommand.CarriageReturn); commandQueue.add(ScreenCommand.LineFeed) } // NEL
-            'H'.code -> commandQueue.add(ScreenCommand.SetCursorCol(0)) // HTS
+            // ESC H 是 HTS（Horizontal Tab Set）：设置制表位。当前未实现制表位系统，暂忽略
+            'H'.code -> {}
             '7'.code -> commandQueue.add(ScreenCommand.SaveCursor) // DECSC
             '8'.code -> commandQueue.add(ScreenCommand.RestoreCursor) // DECRC
-            'F'.code -> commandQueue.add(ScreenCommand.WriteGlyph('\\', 1)) // SGR replacement
+            // ESC F 是 CPL（Cursor Preceding Line）：光标上移一行并回到行首
+            'F'.code -> {
+                commandQueue.add(ScreenCommand.CarriageReturn)
+                commandQueue.add(ScreenCommand.CursorUp(1))
+            }
             'c'.code -> commandQueue.add(ScreenCommand.Reset) // RIS
-            in 0x20..0x2F -> intermediates.append(b.toChar()) // intermediate bytes
+            in 0x20..0x2F -> {
+                intermediates.append(b.toChar())
+                state = State.ESC // 等待更多中间字节或最终字节
+            }
         }
         if (b == 0x1B) state = State.ESC
     }
@@ -165,12 +173,14 @@ class VtParser {
             finalChar == 'M' -> commandQueue.add(ScreenCommand.DeleteLines(p0.coerceAtLeast(1)))
             finalChar == 'P' -> commandQueue.add(ScreenCommand.DeleteChars(p0.coerceAtLeast(1)))
             finalChar == '@' -> commandQueue.add(ScreenCommand.InsertChars(p0.coerceAtLeast(1)))
-            finalChar == 'X' -> commandQueue.add(ScreenCommand.EraseLine(0)) // Erase Characters
+            // CSI X 是 ECH（Erase Characters）：从光标位置向右清除 n 个字符
+            finalChar == 'X' -> commandQueue.add(ScreenCommand.EraseChars(p0.coerceAtLeast(1)))
             finalChar == 'S' -> commandQueue.add(ScreenCommand.ScrollUp)
             finalChar == 'T' -> commandQueue.add(ScreenCommand.ScrollDown)
+            // CSI d 是 VPA（Vertical Position Absolute）：只设置光标行，列保持不变
             finalChar == 'd' -> {
                 val row = p0.coerceAtLeast(1) - 1
-                commandQueue.add(ScreenCommand.MoveCursor(row, cursorCol))
+                commandQueue.add(ScreenCommand.SetCursorRow(row))
             }
             finalChar == 'm' -> commandQueue.add(ScreenCommand.SetSgr(p))
             finalChar == 'r' -> {
@@ -179,12 +189,12 @@ class VtParser {
                 commandQueue.add(ScreenCommand.SetScrollRegion(top, bottom))
             }
             finalChar == 'h' -> {
-                val mode = if (privateMarker == '?' && p0 > 0) p0 else p0
-                commandQueue.add(ScreenCommand.SetMode(mode, true))
+                // DECSET/DECROM 模式设置（带 ? 前缀的私有模式）
+                commandQueue.add(ScreenCommand.SetMode(p0, true))
             }
             finalChar == 'l' -> {
-                val mode = if (privateMarker == '?' && p0 > 0) p0 else p0
-                commandQueue.add(ScreenCommand.SetMode(mode, false))
+                // DECSET/DECROM 模式重置
+                commandQueue.add(ScreenCommand.SetMode(p0, false))
             }
             finalChar == 's' -> commandQueue.add(ScreenCommand.SaveCursor)
             finalChar == 'u' -> commandQueue.add(ScreenCommand.RestoreCursor)

@@ -1,7 +1,6 @@
 package com.devterm.terminal.core
 
 import com.devterm.terminal.core.backend.TerminalSession
-import com.devterm.terminal.core.parser.ScreenCommand
 import com.devterm.terminal.core.parser.VtParser
 import com.devterm.terminal.core.renderer.FrameQueue
 import com.devterm.terminal.core.renderer.RenderFrame
@@ -15,7 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.concurrent.thread
 
 class TerminalCore(
     var cols: Int = 80,
@@ -62,11 +60,8 @@ class TerminalCore(
         val commands = parser.consume(data)
         for (cmd in commands) {
             screen.execute(cmd)
-            if (cmd is ScreenCommand.EraseDisplay && (cmd.mode == 2 || cmd.mode == 3)) {
-                frameQueue.notifyDirty()
-                emitFrame()
-            }
         }
+        // 统一通过 FrameQueue 节流，清屏等操作不再特殊处理
         frameQueue.notifyDirty()
     }
 

@@ -5,10 +5,6 @@ import java.util.concurrent.ConcurrentHashMap
 object UnicodeWidthCache {
     private val cache = ConcurrentHashMap<Int, Byte>()
 
-    private const val CATEGORY_EAST_ASIAN_WIDTH = 1
-    private const val CATEGORY_AMBIGUOUS = 2
-    private const val CATEGORY_FULLWIDTH = 1
-
     private val highSurrogateRange = 0xD800..0xDFFF
     private val combiningRange = intArrayOf(
         0x0300, 0x036F, 0x0483, 0x0489, 0x0591, 0x05BD, 0x05BF, 0x05BF,
@@ -65,12 +61,12 @@ object UnicodeWidthCache {
         0xFFE0, 0xFFE6, 0xFFF9, 0xFFFB, 0xE0100, 0xE01EF
     )
 
-    fun width(codepoint: Int): Byte {
-        if (cache.containsKey(codepoint)) return cache[codepoint]!!
-        val w = computeWidth(codepoint)
-        cache[codepoint] = w
-        return w
-    }
+    /**
+     * 查询字符显示宽度（线程安全）。
+     * 使用 ConcurrentHashMap.getOrPut 保证同一 codepoint 只计算一次。
+     */
+    fun width(codepoint: Int): Byte =
+        cache.getOrPut(codepoint) { computeWidth(codepoint) }
 
     private fun computeWidth(codepoint: Int): Byte {
         if (codepoint < 0x20) return 0

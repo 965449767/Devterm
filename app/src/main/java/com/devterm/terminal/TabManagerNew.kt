@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.devterm.terminal.core.backend.Backend
+import com.devterm.terminal.core.backend.ProcessBackend
 import java.io.File
 
 data class TabDataNew(
@@ -70,7 +71,8 @@ class TabManagerNew(
             env.putAll(nodeRuntime.envVars(shell))
         }
 
-        return AppBackend(
+        // 复用 terminal-core 模块的 ProcessBackend，避免重复实现
+        return ProcessBackend(
             command = listOf(shell, "-i"),
             environment = env,
             workingDir = "${filesDirPath}/home"
