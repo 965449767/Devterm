@@ -9,22 +9,25 @@ import java.io.FileOutputStream
 /**
  * PTY（伪终端）Backend 实现。
  *
- * **当前状态：骨架实现，等待 .so 原生代码支持。**
+ * **工作原理**：
+ * 1. 通过 `/dev/ptmx` 创建伪终端主设备
+ * 2. `grantpt()` + `unlockpt()` 获取从设备路径
+ * 3. `fork()` 创建子进程，`setsid()` 创建新会话
+ * 4. 将从设备绑定到子进程的 stdin/stdout/stderr
+ * 5. `execve()` 执行 shell
+ * 6. 通过主设备文件描述符与子进程通信
  *
- * 真正的 PTY 需要：
- * 1. `openpty()` 或 `open("/dev/ptmx")` + `grantpt()` + `unlockpt()` + `ptsname()`
- * 2. `fork()` + `setsid()` + 将 slave fd 设为 stdin/stdout/stderr + `execve()`
- * 3. `ioctl(masterFd, TIOCSWINSZ, &winsize)` 通知窗口大小变化
+ * **编译方式**：
+ * - 使用 Android NDK CMake 构建：`./gradlew :app:externalNativeBuildDebug`
+ * - 或手动交叉编译：参考 `scripts/build-pty.sh`
  *
- * 这些系统调用在纯 Java/Kotlin 中不可用（Android 的 `android.system.Os` 不暴露 openpty/ioctl），
- * 必须通过 JNI 或交叉编译的 .so 库实现。
- *
- * **实现路线**：
- * - Phase 5a：交叉编译 `libpty.so`（C 代码封装 openpty + fork + exec）
- * - Phase 5b：通过 `System.loadLibrary("pty")` 加载
- * - Phase 5c：PtyBackend 调用 native 方法
- *
- * 当前此类提供完整的接口骨架，native 方法标记为 external，待 .so 就绪后填充。
+ * **使用方式**：
+ * ```kotlin
+ * if (PtyBackend.isAvailable()) {
+ *     val backend = PtyBackend(listOf("/system/bin/sh"), env)
+ *     backend.start(callback)
+ * }
+ * ```
  */
 class PtyBackend(
     private val command: List<String>,
@@ -45,16 +48,27 @@ class PtyBackend(
     private val buffer = ByteArray(8192)
     private var childPid: Int = -1
 
+    init {
+        // 将参数传递给 native 层
+        val cmdArray = command.toTypedArray()
+        val envArray = environment.map { "${it.key}=${it.value}" }.toTypedArray()
+        nativeInitialize(cmdArray, envArray, workingDir, cols, rows)
+    }
+
     override fun start(callback: BackendCallback) {
         this.callback = callback
 
         // 尝试通过 native 创建 PTY
         if (!nativeCreatePty()) {
+            nativeCleanup()
             throw IllegalStateException(
-                "PTY 不可用：需要 libpty.so 原生库。" +
-                "请先交叉编译 libpty.so 并放入 jniLibs 目录。"
+                "PTY 创建失败：可能原因包括 SELinux 限制、/dev/ptmx 不可访问或权限不足。"
             )
         }
+
+        // 包装 master fd 为流
+        masterInput = FileInputStream(masterFd)
+        masterOutput = FileOutputStream(masterFd)
 
         running = true
 
@@ -92,11 +106,13 @@ class PtyBackend(
         running = false
         if (childPid > 0) {
             nativeKillChild(childPid)
+            childPid = -1
         }
         nativeClosePty(masterFd)
         masterFd = -1
         masterInput = null
         masterOutput = null
+        nativeCleanup()
     }
 
     private fun readerLoop() {
@@ -122,20 +138,28 @@ class PtyBackend(
         }
     }
 
-    // ===== Native 方法（待 .so 实现） =====
+    // ===== Native 方法（由 libpty.so 实现） =====
+
+    /**
+     * 初始化 native 层参数。
+     * 在构造函数中调用，将 command、environment、workingDir、cols、rows 传递给 C 层。
+     */
+    private external fun nativeInitialize(
+        command: Array<String>,
+        envVars: Array<String>,
+        workingDir: String?,
+        cols: Int,
+        rows: Int
+    )
 
     /**
      * 创建 PTY 并 fork 子进程。
      *
      * 成功时设置：
      * - masterFd：master 端的文件描述符
-     * - masterInput/masterOutput：包装后的流
      * - childPid：子进程 PID
      *
      * @return true 如果创建成功
-     *
-     * 注意：此方法由 libpty.so 实现。.so 未加载时不应被调用
-     * （调用前应先通过 [isAvailable] 检查）。
      */
     private external fun nativeCreatePty(): Boolean
 
@@ -143,6 +167,11 @@ class PtyBackend(
     private external fun nativeKillChild(pid: Int)
     private external fun nativeClosePty(fd: Int)
     private external fun nativeWaitForChild(pid: Int): Int
+
+    /**
+     * 清理 native 层资源（释放 malloc 分配的内存）。
+     */
+    private external fun nativeCleanup()
 
     companion object {
         /**

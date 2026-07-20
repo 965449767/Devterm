@@ -14,6 +14,16 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_TOOLCHAIN=clang"
+                arguments += "-DANDROID_STL=c++_shared"
+            }
+        }
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
@@ -23,6 +33,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 

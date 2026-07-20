@@ -117,16 +117,23 @@ object UnicodeWidthCache {
 
 ### 保留的设计决策（从旧版继承）
 
-#### 为什么不用 JNI / C 代码？
-宇宙 B 编译器运行在 ARM64 Linux 上，但 NDK / cmake 工具链仅为 x86_64 架构，且 QEMU binfmt_misc 未注册。
-因此全部用纯 Kotlin——但新的 SoA + Dirty Region + Ring Buffer 架构让纯 Kotlin 性能接近原生。
+#### JNI / C 代码使用说明
+PTY（伪终端）功能需要通过 native 代码实现，因为 Java/Kotlin 无法直接调用：
+- `openpty()` / `/dev/ptmx` 创建伪终端
+- `fork()` 创建子进程
+- `execve()` 执行 shell
+- `ioctl(TIOCSWINSZ)` 设置窗口大小
+
+因此 **Phase 5 放宽"不引入原生代码"规则**，允许在 `app/src/main/cpp/` 目录下添加 C 代码，通过交叉编译生成 `libpty.so`。
+
+编译方式：使用 `gcc-aarch64-linux-gnu` 交叉编译器或 Android NDK。
 
 #### SELinux `execve` 禁令（Xiaomi/MIUI）
 通过 shell 函数 + `/system/bin/linker64` 加载 node 二进制。策略不变。
 
 #### PTY 缺失的影响
 无 Ctrl+C/Z 等作业控制信号，shell 回显由 `localEcho` 补偿。
-未来通过 `.so` 恢复（Phase 5），架构上 PTY 只是 Backend 的另一种实现。
+通过 `.so` 恢复（Phase 5），架构上 PTY 只是 Backend 的另一种实现。
 
 ## 目录结构
 
@@ -199,7 +206,7 @@ object UnicodeWidthCache {
 2. **不写模块级 `repositories {}`**：统一在 `settings.gradle.kts`
 3. **不改 `gradle-wrapper.properties`、`local.properties`、`settings.gradle.kts` 仓库块、`gradle.properties` 的 aapt2 设置**
 4. **所有项目建在 `/workspace/` 下**
-5. **不引入原生代码**
+5. **原生代码限制**：仅允许在 `app/src/main/cpp/` 目录下添加 C 代码用于 PTY 实现，其他模块禁止使用原生代码
 6. **terminal-core 模块不允许依赖 Android / Compose / 任何 UI 框架**
 
 ## 构建命令

@@ -70,7 +70,7 @@
 | 3 | ✅ | 10 项基准测试 + 50+ 单元测试 + 20+ 回归测试 |
 | 4 | ✅ | 增量 Canvas + 光标闪烁 + CONCEAL |
 | 5a | ✅ | PTY 架构准备（BackendCapabilities + PtyBackend 骨架 + Factory） |
-| 5b | 🔲 | libpty.so 交叉编译（需要 NDK 环境） |
+| 5b | 🔶 | libpty.so 代码完成，等待交叉编译（需网络安装工具链） |
 | 5c | 🔲 | libpty.so 接入测试（真机验证） |
 
 ### 代码合并状态
@@ -84,10 +84,8 @@
    - 缓解：通过子 agent 静态语法检查
    - 待办：网络恢复后运行 `./gradlew :terminal-core:test :app:assembleDebug`
 
-2. **PTY 真正实现需要 .so**：当前 PtyBackend 只是骨架
-   - 需要：交叉编译 libpty.so（C 代码封装 openpty + fork + exec）
-   - 障碍：NDK 不可用、项目规则"不引入原生代码"
-   - 待办：评估是否放宽规则，或寻找纯 Kotlin 的 PTY 替代方案
+2. **交叉编译工具链缺失**：当前环境无 aarch64-linux-gnu-gcc 或 Android NDK
+   - 待办：网络恢复后安装 `gcc-aarch64-linux-gnu` 或配置 Android NDK
 
 3. **SELinux 限制**：即使有 .so，/dev/ptmx 访问可能被 SELinux 拒绝
    - 待办：真机测试 SELinux 策略
@@ -95,15 +93,16 @@
 ## 下一步计划
 
 ### 短期（网络恢复后）
-1. 运行 `./gradlew :terminal-core:test :app:assembleDebug` 验证编译
-2. 真机测试 Ctrl+C、Ctrl+D、Ctrl+Z 是否能发送给 shell
-3. 真机测试 localEcho 行为
+1. 安装交叉编译工具链：`sudo apt install gcc-aarch64-linux-gnu`
+2. 运行 `./scripts/build-pty.sh` 编译 libpty.so
+3. 运行 `./gradlew :terminal-core:test :app:assembleDebug` 验证编译
+4. 真机测试 Ctrl+C、Ctrl+D、Ctrl+Z 是否能发送给 shell
 
 ### 中期（Phase 5b - libpty.so）
-1. 编写 C 代码：`pty.c` 封装 openpty + fork + execve + ioctl(TIOCSWINSZ)
-2. 交叉编译为 arm64-v8a 的 libpty.so
-3. 放入 `app/src/main/jniLibs/arm64-v8a/`
-4. 测试 `PtyBackend.isAvailable()` 返回 true
+1. ✅ 编写 C 代码：`pty.c` 封装 openpty + fork + execve + ioctl(TIOCSWINSZ)
+2. 🔲 交叉编译为 arm64-v8a 的 libpty.so（等待网络）
+3. 🔲 放入 `app/src/main/jniLibs/arm64-v8a/`
+4. 🔲 测试 `PtyBackend.isAvailable()` 返回 true
 
 ### 长期
 1. 真机验证 PTY 模式下 vim/top/Ctrl+C 是否正常工作
