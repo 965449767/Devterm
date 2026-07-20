@@ -190,12 +190,19 @@ class VtParser {
                 commandQueue.add(ScreenCommand.SetScrollRegion(top, bottom))
             }
             finalChar == 'h' -> {
-                // DECSET/DECROM 模式设置（带 ? 前缀的私有模式）
-                commandQueue.add(ScreenCommand.SetMode(p0, true))
+                // 带 ? 前缀的是私有模式（DECSET），否则是普通模式
+                if (privateMarker == '?') {
+                    commandQueue.add(ScreenCommand.SetPrivateMode(p0, true))
+                } else {
+                    commandQueue.add(ScreenCommand.SetMode(p0, true))
+                }
             }
             finalChar == 'l' -> {
-                // DECSET/DECROM 模式重置
-                commandQueue.add(ScreenCommand.SetMode(p0, false))
+                if (privateMarker == '?') {
+                    commandQueue.add(ScreenCommand.SetPrivateMode(p0, false))
+                } else {
+                    commandQueue.add(ScreenCommand.SetMode(p0, false))
+                }
             }
             finalChar == 's' -> commandQueue.add(ScreenCommand.SaveCursor)
             finalChar == 'u' -> commandQueue.add(ScreenCommand.RestoreCursor)
@@ -206,6 +213,10 @@ class VtParser {
                 }
             }
             finalChar == 'c' -> { /* DA - Device Attributes, ignore */ }
+            // CSI SP q (DECSCUSR)：设置光标样式
+            finalChar == 'q' && intermediates.contains(' ') -> {
+                commandQueue.add(ScreenCommand.SetCursorStyle(p0))
+            }
         }
 
         params.clear()

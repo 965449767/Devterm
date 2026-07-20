@@ -31,6 +31,8 @@ sealed class ScreenCommand {
     data class SetIconName(val name: String) : ScreenCommand()
     data class SetScrollRegion(val top: Int, val bottom: Int) : ScreenCommand()
     data class SetMode(val mode: Int, val set: Boolean) : ScreenCommand()
+    data class SetPrivateMode(val mode: Int, val set: Boolean) : ScreenCommand()
+    data class SetCursorStyle(val style: Int) : ScreenCommand()
     object Reset : ScreenCommand()
     data class Bell(val count: Int) : ScreenCommand()
     data class DeviceStatusReport(val n: Int) : ScreenCommand()

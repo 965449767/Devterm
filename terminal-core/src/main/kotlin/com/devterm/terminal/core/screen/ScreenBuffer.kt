@@ -14,6 +14,9 @@ class ScreenBuffer(
     val dirty = DirtyTracker(rows)
     val scrollback = ScrollbackBuffer(50000)
 
+    /** Bell 响铃回调：由 TerminalCore 设置并传递到 UI 层 */
+    var onBell: (() -> Unit)? = null
+
     var cursor = CursorState()
     private var savedCursor = CursorState()
     private var savedFg: Int = 0
@@ -30,6 +33,24 @@ class ScreenBuffer(
     var scrollRegionBottom: Int = rows - 1
     var originMode: Boolean = false
     var autoWrap: Boolean = true
+
+    /** 括号粘贴模式：粘贴内容时用特殊序列包裹 */
+    var bracketedPasteMode: Boolean = false
+
+    /** 是否使用备用屏幕（vim/less/tmux 等全屏程序使用） */
+    var useAlternateScreen: Boolean = false
+        private set
+
+    // 备用屏幕缓冲区
+    private var altChars: CharArray? = null
+    private var altFg: IntArray? = null
+    private var altBg: IntArray? = null
+    private var altFlags: ByteArray? = null
+    // 主屏幕保存（切换到备用时保存主屏幕内容）
+    private var savedMainChars: CharArray? = null
+    private var savedMainFg: IntArray? = null
+    private var savedMainBg: IntArray? = null
+    private var savedMainFlags: ByteArray? = null
 
     private var wrapPending: Boolean = false
 
@@ -113,8 +134,10 @@ class ScreenBuffer(
         is ScreenCommand.SetSgr -> setSgr(command.params)
         is ScreenCommand.SetScrollRegion -> setScrollRegion(command.top, command.bottom)
         is ScreenCommand.SetMode -> setMode(command.mode, command.set)
+        is ScreenCommand.SetPrivateMode -> setPrivateMode(command.mode, command.set)
+        is ScreenCommand.SetCursorStyle -> setCursorStyle(command.style)
         is ScreenCommand.Reset -> reset()
-        is ScreenCommand.Bell -> {}
+        is ScreenCommand.Bell -> onBell?.invoke()
         else -> {}
     }
 
@@ -621,6 +644,85 @@ class ScreenBuffer(
         }
     }
 
+    /**
+     * 处理 DEC 私有模式（带 ? 前缀的 CSI 序列）。
+     * 常用模式：
+     * - 1049：备用屏幕切换（vim/less/tmux）
+     * - 2004：括号粘贴模式
+     */
+    private fun setPrivateMode(mode: Int, set: Boolean) {
+        when (mode) {
+            1049 -> switchAlternateScreen(set)
+            2004 -> bracketedPasteMode = set
+        }
+    }
+
+    /**
+     * 设置光标样式（DECSCUSR）。
+     * 样式编号：
+     * - 0/1：块状闪烁（BLOCK）
+     * - 2：块状稳态
+     * - 3：下划线闪烁
+     * - 4：下划线稳态
+     * - 5：竖线闪烁
+     * - 6：竖线稳态
+     */
+    private fun setCursorStyle(style: Int) {
+        val cursorStyle = when (style) {
+            0, 1, 2 -> CursorState.CursorStyle.BLOCK
+            3, 4 -> CursorState.CursorStyle.UNDERLINE
+            5, 6 -> CursorState.CursorStyle.BAR
+            else -> CursorState.CursorStyle.BLOCK
+        }
+        cursor = cursor.copy(style = cursorStyle)
+    }
+
+    /**
+     * 切换备用屏幕。
+     * 进入备用屏幕：保存主屏幕内容，清空屏幕
+     * 退出备用屏幕：恢复主屏幕内容
+     */
+    private fun switchAlternateScreen(enable: Boolean) {
+        if (enable && !useAlternateScreen) {
+            // 保存主屏幕
+            savedMainChars = chars.copyOf()
+            savedMainFg = fg.copyOf()
+            savedMainBg = bg.copyOf()
+            savedMainFlags = flags.copyOf()
+            // 初始化备用屏幕（如果没有）
+            if (altChars == null || altChars!!.size != chars.size) {
+                val total = cols * rows
+                altChars = CharArray(total) { ' ' }
+                altFg = IntArray(total) { defaultFg }
+                altBg = IntArray(total) { defaultBg }
+                altFlags = ByteArray(total) { 0 }
+            }
+            // 切换到备用屏幕
+            chars = altChars!!
+            fg = altFg!!
+            bg = altBg!!
+            flags = altFlags!!
+            useAlternateScreen = true
+            cursor = CursorState()
+            dirty.markAll()
+        } else if (!enable && useAlternateScreen) {
+            // 保存当前备用屏幕内容
+            altChars = chars.copyOf()
+            altFg = fg.copyOf()
+            altBg = bg.copyOf()
+            altFlags = flags.copyOf()
+            // 恢复主屏幕
+            if (savedMainChars != null) {
+                chars = savedMainChars!!
+                fg = savedMainFg!!
+                bg = savedMainBg!!
+                flags = savedMainFlags!!
+            }
+            useAlternateScreen = false
+            dirty.markAll()
+        }
+    }
+
     private fun reset() {
         val total = cols * rows
         chars = CharArray(total) { ' ' }
@@ -640,6 +742,25 @@ class ScreenBuffer(
         originMode = false
         autoWrap = true
         wrapPending = false
+        bracketedPasteMode = false
+        // 如果在备用屏幕中，切换回主屏幕
+        if (useAlternateScreen) {
+            useAlternateScreen = false
+            if (savedMainChars != null) {
+                chars = savedMainChars!!
+                fg = savedMainFg!!
+                bg = savedMainBg!!
+                flags = savedMainFlags!!
+            }
+        }
+        altChars = null
+        altFg = null
+        altBg = null
+        altFlags = null
+        savedMainChars = null
+        savedMainFg = null
+        savedMainBg = null
+        savedMainFlags = null
         // 重置制表位为默认每 8 列一个
         for (col in 0 until cols) {
             tabStops[col] = col % tabWidth == 0

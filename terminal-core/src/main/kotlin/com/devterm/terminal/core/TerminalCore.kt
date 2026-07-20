@@ -29,6 +29,9 @@ class TerminalCore(
     private val _title = MutableStateFlow("")
     val title: StateFlow<String> = _title.asStateFlow()
 
+    private val _bell = MutableStateFlow(0)
+    val bell: StateFlow<Int> = _bell.asStateFlow()
+
     private var session: TerminalSession? = null
     private var sessionStarted = false
     private var renderJob: Job? = null
@@ -36,6 +39,10 @@ class TerminalCore(
 
     init {
         _frame.value = buildFrame(emptyList())
+        // 绑定 ScreenBuffer 的 Bell 回调
+        screen.onBell = {
+            _bell.value = _bell.value + 1
+        }
     }
 
     private fun buildEmptyFrame(): RenderFrame = buildFrame(emptyList())
